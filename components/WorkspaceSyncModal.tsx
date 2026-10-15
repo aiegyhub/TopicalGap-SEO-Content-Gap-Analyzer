@@ -110,6 +110,30 @@ export default function WorkspaceSyncModal({
                 </p>
               </div>
 
+              {!accessToken && (
+                <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="text-xs">
+                      <span className="font-bold text-blue-950 block">
+                        {isAr ? 'حساب Google غير متصل حالياً' : 'Google Account Not Connected'}
+                      </span>
+                      <span className="text-blue-700 text-[11px]">
+                        {isAr
+                          ? 'اضغط هنا لربط حساب جوجل ومنح الصلاحيات للمزامنة إلى Drive & Sheets مباشرة.'
+                          : 'Click to connect your Google account and grant Drive & Sheets access.'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onNeedAuth}
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors shrink-0 cursor-pointer"
+                    >
+                      {isAr ? 'تسجيل الدخول وربط الحساب' : 'Sign in with Google'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Items summary */}
               <div className="space-y-2.5">
                 <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">

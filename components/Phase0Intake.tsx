@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import {
   Upload,
@@ -19,7 +19,13 @@ import {
   LineChart,
   Filter,
   Check,
-  FolderArchive
+  FolderArchive,
+  FileCode,
+  Link2,
+  Code,
+  Trash2,
+  Loader2,
+  Info
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { parseSitemapXml } from '../lib/sitemap-parser';
@@ -28,9 +34,10 @@ import {
   RawPageRow,
   SiteProfile,
   Phase0Answers,
-  GscExportBundle
+  GscExportBundle,
+  ParsedSitemap
 } from '../lib/types';
-import { detectAndValidateCsv, classifySiteArchitecture, parseGscBundle } from '../lib/seo-engine';
+import { classifySiteArchitecture, parseGscBundle } from '../lib/seo-engine';
 import {
   ARABIC_SAMPLE_QUERIES,
   ARABIC_SAMPLE_PAGES,
@@ -42,46 +49,95 @@ import {
 
 interface Phase0IntakeProps {
   lang: 'ar' | 'en';
+  initialAnswers?: Phase0Answers;
+  initialBundle?: GscExportBundle;
+  initialProfile?: SiteProfile;
+  initialProjectName?: string;
   onRunPhase1: (
     queries: RawQueryRow[],
     pages: RawPageRow[],
     profile: SiteProfile,
     answers: Phase0Answers,
-    companionBundle?: Partial<GscExportBundle>
+    companionBundle?: Partial<GscExportBundle>,
+    customProjectName?: string
   ) => void;
 }
 
-export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
+export default function Phase0Intake({
+  lang,
+  initialAnswers,
+  initialBundle,
+  initialProfile,
+  initialProjectName,
+  onRunPhase1
+}: Phase0IntakeProps) {
   const isAr = lang === 'ar';
 
-  const [bundle, setBundle] = useState<GscExportBundle>({
-    queries: [],
-    pages: [],
-    detectedFilesCount: 0,
-    fileNames: []
+  const [projectName, setProjectName] = useState(initialProjectName || '');
+
+  const [bundle, setBundle] = useState<GscExportBundle>(() => {
+    if (initialBundle) return initialBundle;
+    return {
+      queries: [],
+      pages: [],
+      detectedFilesCount: 0,
+      fileNames: []
+    };
   });
 
   const [isDragging, setIsDragging] = useState(false);
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [siteProfile, setSiteProfile] = useState<SiteProfile | null>(null);
+  const [siteProfile, setSiteProfile] = useState<SiteProfile | null>(initialProfile || null);
+
+  // XML Sitemap state
+  const [sitemapInputMode, setSitemapInputMode] = useState<'upload' | 'url' | 'paste'>('upload');
+  const [sitemapUrl, setSitemapUrl] = useState('');
+  const [sitemapPasteText, setSitemapPasteText] = useState('');
+  const [isFetchingSitemapUrl, setIsFetchingSitemapUrl] = useState(false);
+  const [sitemapFeedback, setSitemapFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Phase 0 questions state
-  const [answers, setAnswers] = useState<Phase0Answers>({
-    q0_profileCorrection: '',
-    q1_brandTerms: [],
-    q2_confirmedServicesAndCities: '',
-    q3_businessModel: '',
-    q4_knownFacts: '',
-    q5_extraExportsNotes: '',
-    q6_scopeExclusions: [],
-    q7_hasSitemapOrCrawl: false
+  const [answers, setAnswers] = useState<Phase0Answers>(() => {
+    if (initialAnswers) return initialAnswers;
+    return {
+      q0_profileCorrection: '',
+      q1_brandTerms: [],
+      q2_confirmedServicesAndCities: '',
+      q3_businessModel: '',
+      q4_knownFacts: '',
+      q5_extraExportsNotes: '',
+      q6_scopeExclusions: [],
+      q7_hasSitemapOrCrawl: false
+    };
   });
 
-  const [brandTermsText, setBrandTermsText] = useState('');
-  const [exclusionsText, setExclusionsText] = useState('');
+  const [brandTermsText, setBrandTermsText] = useState(
+    initialAnswers?.q1_brandTerms?.join(', ') || ''
+  );
+  const [exclusionsText, setExclusionsText] = useState(
+    initialAnswers?.q6_scopeExclusions?.join(', ') || ''
+  );
 
-  // Universal File Processor (supports CSV files and ZIP bundles from GSC)
+  // Sync state if initial props change (e.g. from ProjectManager switch)
+  useEffect(() => {
+    if (initialAnswers) {
+      setAnswers(initialAnswers);
+      setBrandTermsText(initialAnswers.q1_brandTerms?.join(', ') || '');
+      setExclusionsText(initialAnswers.q6_scopeExclusions?.join(', ') || '');
+    }
+    if (initialBundle) {
+      setBundle(initialBundle);
+    }
+    if (initialProfile) {
+      setSiteProfile(initialProfile);
+    }
+    if (initialProjectName) {
+      setProjectName(initialProjectName);
+    }
+  }, [initialAnswers, initialBundle, initialProfile, initialProjectName]);
+
+  // Universal File Processor (supports CSV files, XML sitemaps, and ZIP bundles from GSC)
   const processFiles = async (fileList: FileList | File[]) => {
     if (!fileList || fileList.length === 0) return;
 
@@ -134,7 +190,7 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
               }
             }
           } catch (zipErr: any) {
-            setValidationErrors(prev => [...prev, `فشل فك ضغط ملف ZIP: ${zipErr.message}`]);
+            setValidationErrors((prev) => [...prev, `فشل فك ضغط ملف ZIP: ${zipErr.message}`]);
           }
         } else {
           // Regular CSV file
@@ -143,48 +199,59 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
         }
       }
 
-      if (parsedFiles.length === 0) {
-        setValidationErrors([isAr ? 'لم يتم العثور على أي ملفات CSV صالحة للتحليل.' : 'No valid CSV files found in upload.']);
+      if (parsedFiles.length === 0 && !bundle.sitemap) {
+        setValidationErrors([
+          isAr
+            ? 'لم يتم العثور على أي ملفات CSV صالحة للتحليل.'
+            : 'No valid CSV files found in upload.'
+        ]);
         return;
       }
 
-      const newBundle = parseGscBundle(parsedFiles);
+      if (parsedFiles.length > 0) {
+        const newBundle = parseGscBundle(parsedFiles);
 
-      // Merge with state
-      setBundle(prev => {
-        const merged: GscExportBundle = {
-          queries: newBundle.queries.length > 0 ? newBundle.queries : prev.queries,
-          pages: newBundle.pages.length > 0 ? newBundle.pages : prev.pages,
-          countries: newBundle.countries || prev.countries,
-          devices: newBundle.devices || prev.devices,
-          searchAppearance: newBundle.searchAppearance || prev.searchAppearance,
-          filters: newBundle.filters || prev.filters,
-          dateRange: newBundle.dateRange || prev.dateRange,
-          trendChart: newBundle.trendChart || prev.trendChart,
-          detectedFilesCount: (newBundle.queries.length > 0 ? 1 : 0) +
-            (newBundle.pages.length > 0 ? 1 : 0) +
-            (newBundle.countries ? 1 : 0) +
-            (newBundle.devices ? 1 : 0) +
-            (newBundle.searchAppearance ? 1 : 0) +
-            (newBundle.filters ? 1 : 0) +
-            (newBundle.trendChart ? 1 : 0),
-          fileNames: Array.from(new Set([...prev.fileNames, ...newBundle.fileNames]))
-        };
+        setBundle((prev) => {
+          const merged: GscExportBundle = {
+            queries: newBundle.queries.length > 0 ? newBundle.queries : prev.queries,
+            pages: newBundle.pages.length > 0 ? newBundle.pages : prev.pages,
+            countries: newBundle.countries || prev.countries,
+            devices: newBundle.devices || prev.devices,
+            searchAppearance: newBundle.searchAppearance || prev.searchAppearance,
+            filters: newBundle.filters || prev.filters,
+            dateRange: newBundle.dateRange || prev.dateRange,
+            trendChart: newBundle.trendChart || prev.trendChart,
+            sitemap: prev.sitemap,
+            detectedFilesCount:
+              (newBundle.queries.length > 0 ? 1 : 0) +
+              (newBundle.pages.length > 0 ? 1 : 0) +
+              (newBundle.countries ? 1 : 0) +
+              (newBundle.devices ? 1 : 0) +
+              (newBundle.searchAppearance ? 1 : 0) +
+              (newBundle.filters ? 1 : 0) +
+              (newBundle.trendChart ? 1 : 0) +
+              (prev.sitemap ? 1 : 0),
+            fileNames: Array.from(new Set([...prev.fileNames, ...newBundle.fileNames]))
+          };
 
-        if (merged.pages.length > 0) {
-          const profile = classifySiteArchitecture(merged.pages);
-          setSiteProfile(profile);
+          if (merged.pages.length > 0) {
+            const profile = classifySiteArchitecture(merged.pages);
+            setSiteProfile(profile);
+            if (!projectName) {
+              setProjectName(`${profile.siteType} - ${profile.cities[0]?.name || 'تحليل جديد'}`);
+            }
+          }
+
+          return merged;
+        });
+
+        if (newBundle.queries.length === 0 && newBundle.pages.length === 0) {
+          setValidationErrors([
+            isAr
+              ? 'تم التعرف على بعض الملفات المساعدة ولكن لم يتم العثور على ملفات "طلبات البحث" أو "الصفحات".'
+              : 'Queries or Pages file is missing. Please ensure you upload Queries and Pages.'
+          ]);
         }
-
-        return merged;
-      });
-
-      if (newBundle.queries.length === 0 && newBundle.pages.length === 0 && parsedFiles.length > 0) {
-        setValidationErrors([
-          isAr
-            ? 'تم التعرف على بعض الملفات المساعدة ولكن لم يتم العثور على ملفات "طلبات البحث" أو "الصفحات". يرجى التأكد من رفع ملفي طلبات البحث والصفحات.'
-            : 'Some companion files were detected, but Queries or Pages file is missing. Please ensure you upload Queries and Pages.'
-        ]);
       }
     } catch (err: any) {
       setValidationErrors([`File read error: ${err.message}`]);
@@ -229,11 +296,17 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
       if (!res.ok) throw new Error(data.error || 'Failed to load workspace files');
 
       const loadedBundle = data.bundle as GscExportBundle;
-      setBundle(loadedBundle);
+      setBundle((prev) => ({
+        ...loadedBundle,
+        sitemap: prev.sitemap || loadedBundle.sitemap
+      }));
 
       if (loadedBundle.pages.length > 0) {
         const profile = classifySiteArchitecture(loadedBundle.pages);
         setSiteProfile(profile);
+        if (!projectName) {
+          setProjectName(`${profile.siteType} - ${profile.cities[0]?.name || 'تحليل جديد'}`);
+        }
       }
     } catch (err: any) {
       setValidationErrors([`تعذر استيراد الملفات: ${err.message}`]);
@@ -242,8 +315,26 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
     }
   };
 
-  // Sitemap XML processor
+  // Apply parsed sitemap helper
+  const applyParsedSitemap = (parsed: ParsedSitemap, sourceLabel: string) => {
+    setBundle((prev) => ({
+      ...prev,
+      sitemap: parsed,
+      detectedFilesCount: prev.detectedFilesCount + (prev.sitemap ? 0 : 1),
+      fileNames: Array.from(new Set([...prev.fileNames, parsed.fileName || sourceLabel]))
+    }));
+    setAnswers((prev) => ({ ...prev, q7_hasSitemapOrCrawl: true }));
+    setSitemapFeedback({
+      type: 'success',
+      message: isAr
+        ? `تم فحص خريطة الموقع بنجاح: اكتشاف ${parsed.totalUrls.toLocaleString()} رابط عبر ${parsed.categories.length} تصنيف رئيسي.`
+        : `Sitemap parsed: ${parsed.totalUrls.toLocaleString()} URLs across ${parsed.categories.length} categories.`
+    });
+  };
+
+  // Process Sitemap XML File
   const processSitemapFile = async (file: File) => {
+    setSitemapFeedback(null);
     try {
       const text = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -253,16 +344,70 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
       });
 
       const parsedSitemap = parseSitemapXml(text, file.name);
-      setBundle(prev => ({
-        ...prev,
-        sitemap: parsedSitemap,
-        detectedFilesCount: prev.detectedFilesCount + 1,
-        fileNames: Array.from(new Set([...prev.fileNames, file.name]))
-      }));
-      setAnswers(prev => ({ ...prev, q7_hasSitemapOrCrawl: true }));
+      applyParsedSitemap(parsedSitemap, file.name);
     } catch (err: any) {
-      setValidationErrors(prev => [...prev, `فشل قراءة خريطة الموقع XML: ${err.message}`]);
+      setSitemapFeedback({
+        type: 'error',
+        message: isAr ? `فشل تحليل خريطة الموقع XML: ${err.message}` : `Sitemap parse error: ${err.message}`
+      });
     }
+  };
+
+  // Process Sitemap Live URL Fetch via Proxy
+  const handleFetchSitemapUrl = async () => {
+    if (!sitemapUrl || !sitemapUrl.trim()) return;
+    setIsFetchingSitemapUrl(true);
+    setSitemapFeedback(null);
+
+    try {
+      const res = await fetch('/api/fetch-sitemap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sitemapUrl.trim() })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشل جلب خريطة الموقع من الرابط');
+
+      const parsedSitemap = parseSitemapXml(data.xml, sitemapUrl.trim());
+      applyParsedSitemap(parsedSitemap, sitemapUrl.trim());
+    } catch (err: any) {
+      setSitemapFeedback({
+        type: 'error',
+        message: isAr ? `خطأ أثناء جلب الرابط: ${err.message}` : `Error fetching URL: ${err.message}`
+      });
+    } finally {
+      setIsFetchingSitemapUrl(false);
+    }
+  };
+
+  // Process Sitemap Pasted Text
+  const handleParsePastedSitemap = () => {
+    if (!sitemapPasteText || !sitemapPasteText.trim()) return;
+    setSitemapFeedback(null);
+
+    try {
+      const parsedSitemap = parseSitemapXml(sitemapPasteText.trim(), 'pasted_sitemap.xml');
+      if (parsedSitemap.totalUrls === 0) {
+        throw new Error('لم يتم العثور على أي وسوم <loc> أو روابط داخل النص المدخل');
+      }
+      applyParsedSitemap(parsedSitemap, 'pasted_sitemap.xml');
+    } catch (err: any) {
+      setSitemapFeedback({
+        type: 'error',
+        message: isAr ? `فشل قراءة كود XML: ${err.message}` : `XML parse error: ${err.message}`
+      });
+    }
+  };
+
+  // Remove Sitemap
+  const handleRemoveSitemap = () => {
+    setBundle((prev) => ({
+      ...prev,
+      sitemap: undefined
+    }));
+    setAnswers((prev) => ({ ...prev, q7_hasSitemapOrCrawl: false }));
+    setSitemapFeedback(null);
   };
 
   // Load sample dataset
@@ -285,6 +430,7 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
       setBundle(bundleData);
       const profile = classifySiteArchitecture(ARABIC_SAMPLE_PAGES);
       setSiteProfile(profile);
+      setProjectName('شركة خدمات وصيانة (الرياض وجدة)');
       setAnswers(ARABIC_SAMPLE_ANSWERS);
       setBrandTermsText(ARABIC_SAMPLE_ANSWERS.q1_brandTerms.join(', '));
       setExclusionsText((ARABIC_SAMPLE_ANSWERS.q6_scopeExclusions || []).join(', '));
@@ -307,6 +453,7 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
       setBundle(bundleData);
       const profile = classifySiteArchitecture(ENGLISH_SAMPLE_PAGES);
       setSiteProfile(profile);
+      setProjectName('B2B SaaS Agency Demo');
       setAnswers(ENGLISH_SAMPLE_ANSWERS);
       setBrandTermsText(ENGLISH_SAMPLE_ANSWERS.q1_brandTerms.join(', '));
       setExclusionsText((ENGLISH_SAMPLE_ANSWERS.q6_scopeExclusions || []).join(', '));
@@ -317,35 +464,47 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
   const handleRun = (useDefaults: boolean = false) => {
     if (bundle.queries.length === 0 || bundle.pages.length === 0 || !siteProfile) {
       setValidationErrors([
-        isAr ? 'يرجى تحميل ملفي طلبات البحث والصفحات أولاً، أو اختيار نموذج جاهز للمعاينة الفورية.' : 'Please upload both Queries and Pages files first, or select a demo dataset.'
+        isAr
+          ? 'يرجى تحميل ملفي طلبات البحث والصفحات أولاً، أو اختيار نموذج جاهز للمعاينة الفورية.'
+          : 'Please upload both Queries and Pages files first, or select a demo dataset.'
       ]);
       window.scrollTo({ top: 300, behavior: 'smooth' });
       return;
     }
 
-    const brandArray = brandTermsText.split(',').map(s => s.trim()).filter(Boolean);
-    const exclusionArray = exclusionsText.split(',').map(s => s.trim()).filter(Boolean);
+    const brandArray = brandTermsText.split(',').map((s) => s.trim()).filter(Boolean);
+    const exclusionArray = exclusionsText.split(',').map((s) => s.trim()).filter(Boolean);
 
-    const finalAnswers: Phase0Answers = useDefaults ? {
-      q1_brandTerms: [],
-      q2_confirmedServicesAndCities: undefined,
-      q3_businessModel: undefined,
-      q4_knownFacts: undefined,
-      q5_extraExportsNotes: undefined,
-      q6_scopeExclusions: [],
-      q7_hasSitemapOrCrawl: false
-    } : {
-      ...answers,
-      q1_brandTerms: brandArray,
-      q6_scopeExclusions: exclusionArray
-    };
+    const finalAnswers: Phase0Answers = useDefaults
+      ? {
+          q1_brandTerms: [],
+          q2_confirmedServicesAndCities: undefined,
+          q3_businessModel: undefined,
+          q4_knownFacts: undefined,
+          q5_extraExportsNotes: undefined,
+          q6_scopeExclusions: [],
+          q7_hasSitemapOrCrawl: Boolean(bundle.sitemap)
+        }
+      : {
+          ...answers,
+          q1_brandTerms: brandArray,
+          q6_scopeExclusions: exclusionArray,
+          q7_hasSitemapOrCrawl: Boolean(bundle.sitemap) || answers.q7_hasSitemapOrCrawl
+        };
 
     const finalProfile: SiteProfile = {
       ...siteProfile,
       isConfirmed: !useDefaults
     };
 
-    onRunPhase1(bundle.queries, bundle.pages, finalProfile, finalAnswers, bundle);
+    onRunPhase1(
+      bundle.queries,
+      bundle.pages,
+      finalProfile,
+      finalAnswers,
+      bundle,
+      projectName.trim() || undefined
+    );
   };
 
   const hasQueries = bundle.queries.length > 0;
@@ -358,17 +517,17 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-semibold mb-4">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{isAr ? 'المرحلة 0: التحقق، التصنيف، ومعمارية Koray الدلالية' : 'Phase 0: Validation, Intake & Koray Semantic Engine'}</span>
+            <span>{isAr ? 'المرحلة 0: التحقق، التصنيف، والمعمارية الدلالية المتقدمة' : 'Phase 0: Validation, Intake & Advanced Semantic Engine'}</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">
             {isAr
-              ? 'تحليل فجوات المحتوى ومعمارية Koray الدلالية (Search Console)'
-              : 'Topical Content Gap & Koray Semantic SEO Framework'}
+              ? 'تحليل فجوات المحتوى والمعمارية الدلالية المتقدمة (Search Console)'
+              : 'Topical Content Gap & Advanced Semantic SEO Framework'}
           </h1>
           <p className="text-sm text-slate-300 leading-relaxed mb-6">
             {isAr
-              ? 'ارفع ملفات تصدير Search Console دفعة واحدة (يدعم الملفات السبعة العربية بالكامل: طلبات البحث، الصفحات، البلدان، الأجهزة، الفلاتر). يقوم النظام بفحص أصالة المحتوى وتمايز المدن وفق منهجية Koray Tuğberk Gübür لمنع الصفحات المكررة وتوليد وعود محتوى قابلة للفهرسة.'
-              : 'Upload your Google Search Console export files (supports all 7 Arabic/English CSV exports simultaneously). The engine applies Koray Tuğberk Gübür semantic principles, auditing local differentiation and OriginalContentScore.'}
+              ? 'ارفع ملفات Search Console السبعة وادمج معها خريطة الموقع (XML Sitemap) لفحص أصالة المحتوى وتمايز المدن وفق معايير هندسة الكيانات الدلالية لمنع الصفحات المكررة وسد فجوات الفهرسة.'
+              : 'Upload Search Console exports & correlate with your XML Sitemap to audit topical gaps, orphan pages, and local differentiation.'}
           </p>
 
           {/* Quick Demo Preloads */}
@@ -378,18 +537,40 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
             </span>
             <button
               onClick={() => handleLoadSample('arabic')}
-              className="px-3 py-1.5 bg-indigo-600/60 hover:bg-indigo-600 border border-indigo-400/30 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105"
+              className="px-3 py-1.5 bg-indigo-600/60 hover:bg-indigo-600 border border-indigo-400/30 rounded-lg text-xs font-semibold text-white transition-all hover:scale-105 cursor-pointer"
             >
               🇸🇦 {isAr ? 'شركة خدمات وصيانة (الرياض وجدة)' : 'Saudi Services Demo'}
             </button>
             <button
               onClick={() => handleLoadSample('english')}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 transition-all hover:scale-105"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-200 transition-all hover:scale-105 cursor-pointer"
             >
               🌍 {isAr ? 'شركة برمجيات B2B SaaS' : 'B2B SaaS Agency Demo'}
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Project Title Input (Optional customization) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Building className="w-5 h-5 text-indigo-600 shrink-0" />
+          <div>
+            <label className="text-xs font-bold text-slate-900 block">
+              {isAr ? 'اسم المشروع الحالي (Project Name)' : 'Current Project Name'}
+            </label>
+            <span className="text-[11px] text-slate-500">
+              {isAr ? 'يتم حفظ المشروع تلقائياً في المتصفح بهذا الاسم' : 'Project is auto-saved in browser with this name'}
+            </span>
+          </div>
+        </div>
+        <input
+          type="text"
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          placeholder={isAr ? 'مثال: موقع الصيانة الشاملة - الرياض' : 'e.g. My Website SEO Project'}
+          className="text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden min-w-[260px]"
+        />
       </div>
 
       {/* 0.1 Universal Multi-File Upload Zone */}
@@ -398,12 +579,12 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
-              <span>0.1 {isAr ? 'رفع ملفات Search Console السبعة (يدعم السحب المتعدد)' : 'Upload Search Console Exports (Multi-File Ingestion)'}</span>
+              <span>0.1 {isAr ? 'رفع ملفات Search Console (CSV أو ZIP)' : 'Upload Search Console Exports (CSV or ZIP)'}</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {isAr
-                ? 'يمكنك تحديد أو سحب ملفات Search Console السبعة معاً دفعة واحدة. يتعرف المحرك الذكي على كل ملف تلقائياً.'
-                : 'Drag and drop all 7 GSC CSV files simultaneously. The engine automatically classifies and links each dataset.'}
+                ? 'يمكنك تحديد أو سحب ملفات Search Console السبعة معاً دفعة واحدة أو ملف ZIP.'
+                : 'Drag and drop all 7 GSC CSV files simultaneously or your GSC ZIP export.'}
             </p>
           </div>
 
@@ -438,7 +619,7 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
           </span>
           <span className="text-xs text-slate-500 block max-w-lg mx-auto leading-relaxed">
             {isAr
-              ? 'يدعم: طلبات البحث.csv، الصفحات.csv، الفلاتر.csv، الأجهزة.csv، البلدان.csv، شكل الظهور.csv، رسم بياني.csv، أو ملف ZIP من Search Console مباشرة'
+              ? 'يدعم: طلبات البحث.csv، الصفحات.csv، الفلاتر.csv، الأجهزة.csv، البلدان.csv، شكل الظهور.csv، رسم بياني.csv، أو ملف ZIP'
               : 'Supports all 7 GSC exports: Queries, Pages, Filters, Devices, Countries, Appearance, Trends Chart, or ZIP'}
           </span>
           <input
@@ -611,13 +792,264 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
         )}
       </div>
 
-      {/* 0.2 Inferred Site Profile Card (Labeled Probable) */}
+      {/* 0.2 DEDICATED XML SITEMAP SECTION (Multi-mode: Upload, URL fetch via proxy, Paste) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 mb-4 gap-2">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <FileCode className="w-5 h-5 text-indigo-600" />
+              <span>0.2 {isAr ? 'رفع وتحليل خريطة الموقع (XML Sitemap) - اختياري / تكاملي' : 'Upload & Audit XML Sitemap (Optional / Hybrid)'}</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isAr
+                ? 'فهم بنية الروابط والمحتوى الفعلي للموقع يساعدنا في تحديد ما يحتاجه الموقع بدقة: ما هي الصفحات الجديدة وما هي التي تحتاج لتحسين.'
+                : 'Understanding site link architecture and actual content reveals what new pages are needed and which existing pages require improvement.'}
+            </p>
+          </div>
+
+          {bundle.sitemap && (
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                {bundle.sitemap.totalUrls.toLocaleString()} {isAr ? 'رابط مفحوص' : 'URLs audited'}
+              </span>
+              <button
+                type="button"
+                onClick={handleRemoveSitemap}
+                className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                title={isAr ? 'إزالة السايت ماب' : 'Remove Sitemap'}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Why XML Sitemap is Essential Banner */}
+        <div className="mb-4 p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-white rounded-xl border border-indigo-100 flex items-start gap-3">
+          <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5 shadow-2xs">
+            <Info className="w-4 h-4" />
+          </div>
+          <div className="text-xs">
+            <span className="font-black text-indigo-950 block mb-0.5">
+              {isAr ? 'لماذا خريطة الموقع (XML Sitemap) ركيزة جوهرية في التحليل؟' : 'Why is the XML Sitemap Essential to Analysis?'}
+            </span>
+            <p className="text-slate-600 leading-relaxed text-[11px]">
+              {isAr
+                ? 'بمعرفتنا ببنية الروابط ومحتواها الفعلي، نفهم عمق الموقع وهيكله بشكل أدق، مما يساعدنا في تحديد ما يحتاجه الموقع بدقة عالية: ما هي الصفحات الجديدة الواجب إنشاؤها لسد فجوات الظهور، وما هي الصفحات الحالية التي تحتاج للتحسين وتوسيع المحتوى لتتصدر النتائج، مما يرتقي بالسيستم ومخرجاته الاستراتيجية.'
+                : 'By knowing the exact URL structure and content depth, we understand the site far better. This enables precise diagnosis of what the site needs: which new pages to create for search gaps, and which existing pages need content enrichment to reach #1.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Input Mode Selector Tabs */}
+        {!bundle.sitemap && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl w-max">
+              <button
+                type="button"
+                onClick={() => setSitemapInputMode('upload')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  sitemapInputMode === 'upload'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>{isAr ? 'رفع ملف XML' : 'Upload XML File'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSitemapInputMode('url')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  sitemapInputMode === 'url'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>{isAr ? 'رابط خريطة الموقع' : 'Sitemap Live URL'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSitemapInputMode('paste')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  sitemapInputMode === 'paste'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>{isAr ? 'لصق كود XML' : 'Paste XML Text'}</span>
+              </button>
+            </div>
+
+            {/* Mode 1: File Upload */}
+            {sitemapInputMode === 'upload' && (
+              <label className="block p-5 border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/20 rounded-xl text-center cursor-pointer transition-all">
+                <FileCode className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
+                <span className="text-xs font-bold text-slate-800 block mb-0.5">
+                  {isAr ? 'اضغط لاختيار ملف .xml أو .xml.gz أو اسحبه هنا' : 'Click to select .xml or .xml.gz file'}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {isAr ? 'يدعم خريطة الموقع الفردية أو sitemap_index.xml' : 'Supports standard <urlset> or <sitemapindex>'}
+                </span>
+                <input
+                  type="file"
+                  accept=".xml,.xml.gz,text/xml,application/xml"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) processSitemapFile(file);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            )}
+
+            {/* Mode 2: Live URL fetch via server proxy */}
+            {sitemapInputMode === 'url' && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={sitemapUrl}
+                    onChange={(e) => setSitemapUrl(e.target.value)}
+                    placeholder="https://example.com/sitemap.xml"
+                    className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFetchSitemapUrl}
+                    disabled={isFetchingSitemapUrl || !sitemapUrl.trim()}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    {isFetchingSitemapUrl ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>{isAr ? 'جارِ الجلب...' : 'Fetching...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Globe className="w-4 h-4" />
+                        <span>{isAr ? 'فحص وجلب الخريطة' : 'Fetch & Parse'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                  <Info className="w-3.5 h-3.5 text-slate-400" />
+                  <span>
+                    {isAr
+                      ? 'يتم جلب الرابط مباشرة عبر خادم البروكسي الداخلي لتخطي قيود حظر المتصفح (CORS).'
+                      : 'Fetched via internal server proxy to bypass CORS restrictions.'}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            {/* Mode 3: Paste XML text */}
+            {sitemapInputMode === 'paste' && (
+              <div className="space-y-2">
+                <textarea
+                  rows={4}
+                  value={sitemapPasteText}
+                  onChange={(e) => setSitemapPasteText(e.target.value)}
+                  placeholder="<?xml version='1.0' encoding='UTF-8'?>\n<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>\n  <url><loc>https://example.com/service</loc></url>\n</urlset>"
+                  className="w-full text-xs font-mono p-3 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleParsePastedSitemap}
+                  disabled={!sitemapPasteText.trim()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  {isAr ? 'تحليل كود XML الملصق' : 'Parse Pasted XML'}
+                </button>
+              </div>
+            )}
+
+            {/* Feedback notification */}
+            {sitemapFeedback && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                  sitemapFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}
+              >
+                {sitemapFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{sitemapFeedback.message}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Live Sitemap Inspector Card (When Sitemap is Loaded) */}
+        {bundle.sitemap && (
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
+              <div className="flex items-center gap-2">
+                <FileCode className="w-5 h-5 text-indigo-600 shrink-0" />
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 truncate">
+                    {bundle.sitemap.fileName || 'خريطة الموقع المكتشفة'}
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    {bundle.sitemap.totalUrls.toLocaleString()} {isAr ? 'رابط مفهرس في الخريطة' : 'URLs in sitemap'}
+                  </span>
+                </div>
+              </div>
+
+              {bundle.sitemap.latestLastmod && (
+                <span className="text-[11px] text-slate-500">
+                  {isAr ? 'آخر تحديث مسجل: ' : 'Latest update: '}
+                  <span className="font-semibold text-slate-700">{bundle.sitemap.latestLastmod}</span>
+                </span>
+              )}
+            </div>
+
+            {/* Category Distribution */}
+            <div>
+              <span className="text-[11px] font-bold text-slate-700 block mb-1.5">
+                {isAr ? 'توزيع أقسام وروابط الموقع المستنتجة:' : 'Inferred Category Breakdown:'}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {bundle.sitemap.categories.map((cat, i) => (
+                  <span
+                    key={i}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 text-xs font-medium shadow-2xs flex items-center gap-1.5"
+                  >
+                    <span>{cat.name}</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                      {cat.count}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-emerald-700 font-medium pt-1">
+              ✓ {isAr
+                ? 'سيتم دمج هذه الروابط مع صفحات Google Search Console لاكتشاف الصفحات غير المؤرشفة (Orphan Pages) في المرحلة الأولى.'
+                : 'This sitemap will be cross-referenced with GSC pages to detect orphan URLs and missing topic gaps.'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* 0.3 Inferred Site Profile Card (Labeled Probable) */}
       {siteProfile && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Building className="w-5 h-5 text-indigo-600" />
-              <span>0.2 {isAr ? 'ملف تعريف الموقع المستنتج (Site Profile)' : 'Inferred Site Profile'}</span>
+              <span>0.3 {isAr ? 'ملف تعريف الموقع المستنتج (Site Profile)' : 'Inferred Site Profile'}</span>
             </h2>
             <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
@@ -693,14 +1125,14 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
         </div>
       )}
 
-      {/* 0.3 Questions Intake (Structured Q0 to Q7) */}
+      {/* 0.4 Questions Intake (Structured Q0 to Q7) */}
       {siteProfile && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-5">
             <div>
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <HelpCircle className="w-5 h-5 text-indigo-600" />
-                <span>0.3 {isAr ? 'الأسئلة الاستراتيجية للمرحلة 0 (Intake Questions)' : 'Strategic Intake Questions (Max 7)'}</span>
+                <span>0.4 {isAr ? 'الأسئلة الاستراتيجية للمرحلة 0 (Intake Questions)' : 'Strategic Intake Questions'}</span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 {isAr
@@ -774,8 +1206,8 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
               </label>
               <p className="text-[11px] text-slate-500 mb-2">
                 {isAr
-                  ? 'وفق دراسة Koray Tuğberk Gübür: الأسعار الحقيقية، فترة الضمان، ومواصفات الفحص تحمي صفحاتك من خطر التجاهل وعدم الفهرسة.'
-                  : 'Essential to establish genuine information gain and avoid duplicate boilerplate penalty.'}
+                  ? 'وفق معايير هندسة الكيانات وقابلية الفهرسة المتقدمة: الأسعار الحقيقية، فترة الضمان، ومواصفات الفحص تحمي صفحاتك من خطر التجاهل وعدم الفهرسة وتضمن أعلى كسب معرفي (Information Gain).'
+                  : 'Based on advanced semantic architecture: real price baselines, warranty terms, and inspection protocols protect your pages from thin content de-indexing and ensure high information gain.'}
               </p>
               <textarea
                 rows={2}
@@ -800,12 +1232,12 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
               />
             </div>
 
-            {/* Q7: Sitemap / Crawl */}
+            {/* Q7: Sitemap Status */}
             <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700">
               <input
                 type="checkbox"
                 id="sitemapCheck"
-                checked={answers.q7_hasSitemapOrCrawl || false}
+                checked={Boolean(bundle.sitemap) || answers.q7_hasSitemapOrCrawl || false}
                 onChange={(e) => setAnswers({ ...answers, q7_hasSitemapOrCrawl: e.target.checked })}
                 className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
               />
@@ -819,14 +1251,14 @@ export default function Phase0Intake({ lang, onRunPhase1 }: Phase0IntakeProps) {
           <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
             <button
               onClick={() => handleRun(true)}
-              className="text-xs text-slate-500 hover:text-slate-800 underline transition-colors"
+              className="text-xs text-slate-500 hover:text-slate-800 underline transition-colors cursor-pointer"
             >
               {isAr ? 'تخطي واستخدام القيم الافتراضية (Run Now with Defaults)' : 'Skip and run now with defaults'}
             </button>
 
             <button
               onClick={() => handleRun(false)}
-              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>{isAr ? 'تأكيد البيانات وبدء تحليل المعمارية (Run Phase 1)' : 'Confirm & Run Phase 1 Analysis'}</span>
               <ArrowRight className="w-4 h-4 rtl:rotate-180" />

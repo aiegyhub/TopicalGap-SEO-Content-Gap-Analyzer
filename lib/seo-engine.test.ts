@@ -133,7 +133,7 @@ test('calculateBucketBaselines computes impression-weighted CTR baselines', () =
   assert.ok(Math.abs(b13.baselineCtr - 0.1666) < 0.01);
 });
 
-test('runPhase1Analysis produces Koray Tuğberk Gübür blueprints for Top 5 pieces', () => {
+test('runPhase1Analysis produces Advanced Semantic Architecture blueprints for Top 5 pieces', () => {
   const queries: RawQueryRow[] = [
     { query: 'شركة المجد كلين لتنظيف الخزانات', clicks: 50, impressions: 400, ctr: 0.125, position: 1.2 },
     { query: 'اسعار المجد كلين', clicks: 10, impressions: 200, ctr: 0.05, position: 2.0 },

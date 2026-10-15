@@ -184,8 +184,8 @@ export interface QuestionQueryItem {
   evidenceLabel: EvidenceLabel;
 }
 
-// Koray Tuğberk Gübür Semantic SEO & OriginalContentScore Architecture
-export interface KorayContentBlueprint {
+// Advanced Semantic SEO & OriginalContentScore Architecture
+export interface SemanticContentBlueprint {
   id: string;
   targetEntity: string;
   clusterName: string;
@@ -220,6 +220,9 @@ export interface KorayContentBlueprint {
   localDifferentiationAdvice: string;
 }
 
+// Backward compatibility alias
+export type KorayContentBlueprint = SemanticContentBlueprint;
+
 export interface ArticleAngles {
   procedural: string;
   pricing: string;
@@ -245,7 +248,8 @@ export interface TopContentPiece {
   evidenceLabel: EvidenceLabel;
   targetEntity: string;
   primaryImpressionEstimate: number;
-  korayBlueprint?: KorayContentBlueprint;
+  semanticBlueprint?: SemanticContentBlueprint;
+  korayBlueprint?: SemanticContentBlueprint;
 }
 
 export interface TopQuickWin {
@@ -286,6 +290,21 @@ export interface HybridSitemapAudit {
   indexedAndRankingUrls: number;
   orphanSitemapUrls: SitemapUrlEntry[]; // in sitemap but 0 impressions in GSC
   unindexedGapQueries: string[]; // queries targeting unindexed or missing topics
+  newPagesNeeded: {
+    entity: string;
+    query: string;
+    impressions: number;
+    suggestedFormat: string;
+    rationale: string;
+  }[];
+  pagesNeedingImprovement: {
+    page: string;
+    impressions: number;
+    clicks: number;
+    position: number;
+    issue: string;
+    recommendedAction: string;
+  }[];
   categoryBreakdown: { category: string; sitemapCount: number; gscImpressions: number; gscClicks: number }[];
   siteHealthSummary: string;
 }

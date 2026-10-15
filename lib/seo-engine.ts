@@ -13,6 +13,7 @@ import type {
   QuestionQueryItem,
   TopContentPiece,
   TopQuickWin,
+  SemanticContentBlueprint,
   KorayContentBlueprint,
   AnalysisAudit,
   FullAnalysisResult,
@@ -604,12 +605,12 @@ export function calculateBucketBaselines(queries: RawQueryRow[]): Map<string, { 
   return result;
 }
 
-// Koray Tuğberk Gübür Semantic Blueprint Generator
-export function generateKorayBlueprint(
+// Advanced Semantic Blueprint Generator
+export function generateSemanticBlueprint(
   cluster: QueryCluster,
   siteProfile: SiteProfile,
   answers: Phase0Answers
-): KorayContentBlueprint {
+): SemanticContentBlueprint {
   const entity = cluster.entity;
   const isArabic = /[\u0600-\u06FF]/.test(entity) || /[\u0600-\u06FF]/.test(cluster.clusterName);
   const isMultiCity = siteProfile.architectureModel.includes('Model 2') || siteProfile.architectureModel.includes('Model 4');
@@ -621,7 +622,7 @@ export function generateKorayBlueprint(
   if (isMultiCity) {
     diffRisk = 'High';
     diffAdvice = isArabic
-      ? `تحذير من تكرار القوالب (Koray Methodology): لديك صفحات متعددة لمدن مختلفة. تجنب نسخ نفس النص مع تغيير اسم المدينة فقط. يجب تضمين بيانات محلية حقيقية لكل مدينة: أسماء الأحياء المغطاة، رقم فرع التشغيل، طبيعة المياه أو الأعطال الشائعة بالمنطقة.`
+      ? `تحذير من تكرار القوالب (منهجية المعمارية الدلالية): لديك صفحات متعددة لمدن مختلفة. تجنب نسخ نفس النص مع تغيير اسم المدينة فقط. يجب تضمين بيانات محلية حقيقية لكل مدينة: أسماء الأحياء المغطاة، رقم فرع التشغيل، طبيعة المياه أو الأعطال الشائعة بالمنطقة.`
       : `Template Duplication Alert: Multi-city architecture detected. Avoid boilerplate text with only city name swapped. Embed real local evidence: specific neighborhood routes, local water hardness impact, response dispatch hubs.`;
   } else {
     diffAdvice = isArabic
@@ -671,7 +672,7 @@ export function generateKorayBlueprint(
   ];
 
   return {
-    id: `koray-${cluster.id}`,
+    id: `semantic-bp-${cluster.id}`,
     targetEntity: entity,
     clusterName: cluster.clusterName,
     proseSection1,
@@ -689,6 +690,8 @@ export function generateKorayBlueprint(
     localDifferentiationAdvice: diffAdvice
   };
 }
+
+export const generateKorayBlueprint = generateSemanticBlueprint;
 
 // Phase 1 Core Analytical Engine
 export function runPhase1Analysis(
@@ -1153,7 +1156,7 @@ export function runPhase1Analysis(
         : `Required proof: [Published pricing baseline, guaranteed response timeline, verified case studies]`;
     }
 
-    const korayBlueprint = generateKorayBlueprint(cluster, siteProfile, answers);
+    const semanticBlueprint = generateSemanticBlueprint(cluster, siteProfile, answers);
     const priorityTier = idx < highPriorityCount ? 'High' : (idx < highPriorityCount + clusterSupportCount ? 'Medium' : 'Supporting');
 
     return {
@@ -1175,7 +1178,8 @@ export function runPhase1Analysis(
       evidenceLabel: '[Operational-Heuristic]',
       targetEntity: mainEntity,
       primaryImpressionEstimate: cluster.totalImpressions,
-      korayBlueprint
+      semanticBlueprint,
+      korayBlueprint: semanticBlueprint
     };
   });
 

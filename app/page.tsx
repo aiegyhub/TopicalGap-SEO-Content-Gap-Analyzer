@@ -1,26 +1,58 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from '../components/Header';
 import Phase0Intake from '../components/Phase0Intake';
 import Phase1Dashboard from '../components/Phase1Dashboard';
 import SettingsModal from '../components/SettingsModal';
 import WorkspaceSyncModal from '../components/WorkspaceSyncModal';
+import ProjectManagerModal from '../components/ProjectManagerModal';
 import {
   RawQueryRow,
   RawPageRow,
   SiteProfile,
   Phase0Answers,
-  FullAnalysisResult
+  FullAnalysisResult,
+  GscExportBundle,
+  SeoProject
 } from '../lib/types';
 import { runPhase1Analysis } from '../lib/seo-engine';
-import { initAuth, googleSignIn, logout, getAccessToken } from '../lib/firebase-auth';
+import {
+  getSavedProjects,
+  getActiveProject,
+  saveProject,
+  setActiveProjectId
+} from '../lib/project-store';
+import { initAuth, googleSignIn, logout } from '../lib/firebase-auth';
 import { User } from 'firebase/auth';
 
 export default function Home() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+
+  // Project manager state
+  const [isProjectsModalOpen, setIsProjectsModalOpen] = useState(false);
+  const [activeProject, setActiveProject] = useState<SeoProject | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return getActiveProject();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [savedProjectsCount, setSavedProjectsCount] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return getSavedProjects().length;
+      } catch {
+        return 0;
+      }
+    }
+    return 0;
+  });
 
   // Settings state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -46,15 +78,33 @@ export default function Home() {
   });
   const [useThinking, setUseThinking] = useState<boolean>(false);
 
-  // Analysis state
+  // Analysis & Phase state
   const [phase, setPhase] = useState<'phase0' | 'phase1'>('phase0');
   const [analysisResult, setAnalysisResult] = useState<FullAnalysisResult | null>(null);
+
+  // Pre-filled state for Phase 0 when editing project
+  const [intakeAnswers, setIntakeAnswers] = useState<Phase0Answers | undefined>(undefined);
+  const [intakeBundle, setIntakeBundle] = useState<GscExportBundle | undefined>(undefined);
+  const [intakeProfile, setIntakeProfile] = useState<SiteProfile | undefined>(undefined);
+  const [intakeProjectName, setIntakeProjectName] = useState<string | undefined>(undefined);
 
   // Workspace Sync Modal
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authNotification, setAuthNotification] = useState<string | null>(null);
+
+  // Refresh saved projects count and load active project
+  const refreshProjectsList = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const projs = getSavedProjects();
+      setSavedProjectsCount(projs.length);
+      const currentActive = getActiveProject();
+      if (currentActive) {
+        setActiveProject(currentActive);
+      }
+    }
+  }, []);
 
   // Init Firebase Auth
   useEffect(() => {
@@ -122,33 +172,114 @@ export default function Home() {
     }
   };
 
-  // Run Phase 1
+  // Run Phase 1 with full bundle (including sitemap) & auto-save project
   const handleRunPhase1 = (
     queries: RawQueryRow[],
     pages: RawPageRow[],
     profile: SiteProfile,
-    answers: Phase0Answers
+    answers: Phase0Answers,
+    companionBundle?: Partial<GscExportBundle>,
+    customProjectName?: string
   ) => {
-    const result = runPhase1Analysis(queries, pages, profile, answers);
+    const result = runPhase1Analysis(queries, pages, profile, answers, companionBundle);
+    if (customProjectName) {
+      result.projectName = customProjectName;
+    }
+
+    const projName = customProjectName || result.projectName;
+    const existingId = activeProject?.id;
+    const projectToSave: SeoProject = {
+      id: existingId || `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: projName,
+      siteUrl: profile.cities[0]?.name ? `${profile.siteType} (${profile.cities[0].name})` : profile.siteType,
+      createdAt: activeProject?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      phase0Answers: answers,
+      siteProfile: profile,
+      gscBundle: companionBundle,
+      sitemap: companionBundle?.sitemap,
+      analysisResult: result
+    };
+
+    saveProject(projectToSave);
+    setActiveProject(projectToSave);
+    setSavedProjectsCount(getSavedProjects().length);
+
     setAnalysisResult(result);
     setPhase('phase1');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleResetToPhase0 = () => {
+  // Project selection handler with dual modes: view Phase 1 results or edit Phase 0 inputs
+  const handleSelectProject = (project: SeoProject, targetPhase: 'phase0' | 'phase1') => {
+    setActiveProject(project);
+
+    // Populate intake fields so Phase 0 has all saved data
+    setIntakeAnswers(project.phase0Answers);
+    if (project.gscBundle) {
+      setIntakeBundle(project.gscBundle as GscExportBundle);
+    }
+    if (project.siteProfile) {
+      setIntakeProfile(project.siteProfile);
+    }
+    setIntakeProjectName(project.name);
+
+    if (targetPhase === 'phase1' && project.analysisResult) {
+      setAnalysisResult(project.analysisResult);
+      setPhase('phase1');
+    } else {
+      if (project.analysisResult) {
+        setAnalysisResult(project.analysisResult);
+      }
+      setPhase('phase0');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Start a fresh, blank project
+  const handleNewProject = () => {
+    setActiveProjectId(null);
+    setActiveProject(null);
+    setIntakeAnswers(undefined);
+    setIntakeBundle(undefined);
+    setIntakeProfile(undefined);
+    setIntakeProjectName(undefined);
+    setAnalysisResult(null);
     setPhase('phase0');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleResetToPhase0 = () => {
+    if (activeProject) {
+      setIntakeAnswers(activeProject.phase0Answers);
+      if (activeProject.gscBundle) {
+        setIntakeBundle(activeProject.gscBundle as GscExportBundle);
+      }
+      if (activeProject.siteProfile) {
+        setIntakeProfile(activeProject.siteProfile);
+      }
+      setIntakeProjectName(activeProject.name);
+    }
+    setPhase('phase0');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className={`min-h-screen bg-slate-50 text-slate-900 font-sans ${lang === 'ar' ? 'font-arabic' : ''}`}>
-      {/* App Header */}
+      {/* App Header with Projects Manager button */}
       <Header
         user={user}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         lang={lang}
-        onToggleLang={() => setLang(prev => (prev === 'ar' ? 'en' : 'ar'))}
+        onToggleLang={() => setLang((prev) => (prev === 'ar' ? 'en' : 'ar'))}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenProjects={() => {
+          refreshProjectsList();
+          setIsProjectsModalOpen(true);
+        }}
+        savedProjectsCount={savedProjectsCount}
+        activeProjectName={activeProject?.name}
         hasDriveAccess={Boolean(accessToken)}
         isLoggingIn={isLoggingIn}
       />
@@ -160,7 +291,7 @@ export default function Home() {
             <span>{authNotification}</span>
             <button
               onClick={() => setAuthNotification(null)}
-              className="text-amber-700 hover:text-amber-900 font-bold px-2 py-0.5"
+              className="text-amber-700 hover:text-amber-900 font-bold px-2 py-0.5 cursor-pointer"
             >
               ✕
             </button>
@@ -173,6 +304,10 @@ export default function Home() {
         {phase === 'phase0' && (
           <Phase0Intake
             lang={lang}
+            initialAnswers={intakeAnswers}
+            initialBundle={intakeBundle}
+            initialProfile={intakeProfile}
+            initialProjectName={intakeProjectName}
             onRunPhase1={handleRunPhase1}
           />
         )}
@@ -195,6 +330,18 @@ export default function Home() {
           />
         )}
       </main>
+
+      {/* Projects Manager Modal */}
+      <ProjectManagerModal
+        isOpen={isProjectsModalOpen}
+        onClose={() => {
+          setIsProjectsModalOpen(false);
+          refreshProjectsList();
+        }}
+        lang={lang}
+        onSelectProject={handleSelectProject}
+        onNewProject={handleNewProject}
+      />
 
       {/* Settings Modal */}
       <SettingsModal

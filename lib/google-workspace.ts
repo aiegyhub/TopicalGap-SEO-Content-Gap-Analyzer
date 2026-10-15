@@ -272,7 +272,7 @@ export async function createAndPopulateGoogleDoc(
     text += `   Required Proof: ${piece.requiredProof}\n`;
     text += `   Recommended Destination: ${piece.destination} (${piece.evidenceLabel})\n`;
     if (piece.korayBlueprint) {
-      text += `   [Koray Semantic SEO Blueprint]\n`;
+      text += `   [Advanced Semantic SEO Blueprint]\n`;
       text += `   - OriginalContentScore Target: ${piece.korayBlueprint.originalityScoreEstimate.score} (${piece.korayBlueprint.originalityScoreEstimate.scale})\n`;
       text += `   - Local Differentiation Risk: ${piece.korayBlueprint.localDifferentiationRisk}\n`;
       text += `   - Local Differentiation Rule: ${piece.korayBlueprint.localDifferentiationAdvice}\n`;

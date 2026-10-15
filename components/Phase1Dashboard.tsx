@@ -23,7 +23,13 @@ import {
   BarChart3,
   Calendar,
   X,
-  Loader2
+  Loader2,
+  FileCode,
+  CheckCircle2,
+  PlusCircle,
+  Wrench,
+  Info,
+  ArrowUpRight
 } from 'lucide-react';
 import {
   FullAnalysisResult,
@@ -61,7 +67,7 @@ export default function Phase1Dashboard({
   const isAr = lang === 'ar';
 
   const [activeTab, setActiveTab] = useState<
-    'clusters' | 'ctr' | 'cannibalization' | 'questions' | 'newPieces' | 'quickWins' | 'audit' | 'profile' | 'queue' | 'limits'
+    'clusters' | 'ctr' | 'cannibalization' | 'questions' | 'newPieces' | 'quickWins' | 'audit' | 'profile' | 'queue' | 'limits' | 'sitemapAudit'
   >('clusters');
 
   // Search and filters for Clusters
@@ -240,7 +246,7 @@ OUTPUT FORMAT:
         </div>
 
         {/* Top Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 pt-4 border-t border-slate-100">
+        <div className={`grid grid-cols-2 sm:grid-cols-3 ${analysis.hybridSitemapAudit ? 'lg:grid-cols-7' : 'lg:grid-cols-6'} gap-3 mt-5 pt-4 border-t border-slate-100`}>
           <div className="p-3 bg-slate-50 rounded-xl">
             <span className="text-[10px] font-bold uppercase text-slate-500 block">
               {isAr ? 'الكتل الدلالية' : 'Clusters'}
@@ -290,6 +296,27 @@ OUTPUT FORMAT:
               {analysis.cannibalizationRisks.length}
             </span>
           </div>
+
+          {analysis.hybridSitemapAudit && (
+            <div
+              onClick={() => setActiveTab('sitemapAudit')}
+              className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl cursor-pointer hover:bg-emerald-100/70 transition-colors"
+              title={isAr ? 'انقر لعرض تدقيق السايت ماب الهجين' : 'Click to view hybrid sitemap audit'}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase text-emerald-800 block">
+                  {isAr ? 'السايت ماب' : 'Sitemap'}
+                </span>
+                <FileCode className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+              <span className="text-lg font-black text-emerald-800">
+                {analysis.hybridSitemapAudit.totalSitemapUrls.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-emerald-700 block truncate font-medium">
+                {analysis.hybridSitemapAudit.orphanSitemapUrls.length} {isAr ? 'مهجورة' : 'orphans'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -427,6 +454,23 @@ OUTPUT FORMAT:
         >
           J&K. {isAr ? 'حدود البيانات والقرارات' : 'Limits & Decisions'}
         </button>
+
+        {analysis.hybridSitemapAudit && (
+          <button
+            onClick={() => setActiveTab('sitemapAudit')}
+            className={`px-3 py-2 rounded-t-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'sitemapAudit'
+                ? 'bg-white text-emerald-700 border-t-2 border-emerald-600 shadow-xs font-bold'
+                : 'text-emerald-700/80 hover:text-emerald-900 bg-emerald-50/50'
+            }`}
+          >
+            <FileCode className="w-3.5 h-3.5 text-emerald-600" />
+            <span>L. {isAr ? 'تدقيق السايت ماب الهجين' : 'Hybrid Sitemap Audit'}</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+              {analysis.hybridSitemapAudit.totalSitemapUrls}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* TAB CONTENT */}
@@ -639,9 +683,37 @@ OUTPUT FORMAT:
         </div>
       )}
 
-      {/* TAB G: Top 5 New Content Pieces (Promise and Proof Discipline) */}
+      {/* TAB G: New Content Pieces (Promise and Proof Discipline & Dynamic Content Volume) */}
       {activeTab === 'newPieces' && (
         <div className="space-y-4">
+          {/* Dynamic Content Volume Plan based on Sitemap + Clusters */}
+          {analysis.contentVolumePlan && (
+            <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" />
+                  <h4 className="text-xs font-bold text-indigo-200 uppercase tracking-wider">
+                    {isAr ? 'خطة حجم المحتوى الفعلي للموقع' : 'Dynamic Site Content Volume Plan'}
+                  </h4>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    {analysis.contentVolumePlan.siteSizeTier}
+                  </span>
+                </div>
+                <span className="text-xs font-extrabold text-emerald-400">
+                  {analysis.contentVolumePlan.totalRecommendedPieces} {isAr ? 'مقالاً مستهدفاً لسد الفجوات' : 'Targeted Pieces'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {analysis.contentVolumePlan.rationale}
+              </p>
+              <div className="flex flex-wrap items-center gap-4 pt-1 text-[11px] text-slate-300 border-t border-slate-800">
+                <span>• {isAr ? 'أولوية قصوى رئيسية:' : 'High Priority Pieces:'} <strong className="text-white">{analysis.contentVolumePlan.highPriorityCount}</strong></span>
+                <span>• {isAr ? 'مقالات داعمة للعناقيد:' : 'Supporting Cluster Pieces:'} <strong className="text-white">{analysis.contentVolumePlan.clusterSupportCount}</strong></span>
+                <span>• {isAr ? 'عناقيد غير مغطاة:' : 'Uncovered Clusters:'} <strong className="text-white">{analysis.contentVolumePlan.uncoveredClustersCount}</strong></span>
+              </div>
+            </div>
+          )}
+
           <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs text-indigo-900 flex items-start gap-3">
             <Award className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
             <div>
@@ -722,16 +794,16 @@ OUTPUT FORMAT:
                   <p className="text-amber-800">{piece.requiredProof}</p>
                 </div>
 
-                {/* Koray Tuğberk Gübür Semantic SEO Blueprint */}
+                {/* Advanced Semantic SEO Blueprint */}
                 {piece.korayBlueprint && (
                   <div className="mt-3 pt-3 border-t border-slate-100 space-y-3 bg-gradient-to-br from-indigo-50/40 via-purple-50/20 to-slate-50 p-4 rounded-xl border border-indigo-100">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-0.5 rounded text-[10px] font-black bg-indigo-600 text-white">
-                          Koray Gübür Semantic Framework
+                          {isAr ? 'المعمارية الدلالية المتقدمة' : 'Advanced Semantic Architecture'}
                         </span>
                         <span className="text-[11px] font-bold text-slate-800">
-                          {isAr ? 'مخطط الكيانات الدلالية وقابلية الفهرسة' : 'Semantic Entity & Prose Blueprint'}
+                          {isAr ? 'مخطط الكيانات الدلالية وهيكل المقال' : 'Semantic Entity & Prose Blueprint'}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px]">
@@ -1252,7 +1324,314 @@ OUTPUT FORMAT:
         </div>
       )}
 
-      {/* Cluster Details Modal (Drilldown) */}
+      {/* TAB L: Hybrid Sitemap Audit (Sitemap vs GSC) */}
+      {activeTab === 'sitemapAudit' && analysis.hybridSitemapAudit && (
+        <div className="space-y-6">
+          {/* Strategic Philosophy Banner */}
+          <div className="p-4 bg-gradient-to-r from-indigo-50/90 via-purple-50/60 to-white rounded-2xl border border-indigo-100 flex items-start gap-3 shadow-xs">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl shrink-0 mt-0.5 shadow-2xs">
+              <Info className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-indigo-950 mb-1">
+                {isAr
+                  ? 'لماذا تحليل خريطة الموقع (XML Sitemap) ركيزة جوهرية في التحليل؟'
+                  : 'Why is the XML Sitemap Essential to Analysis?'}
+              </h4>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                {isAr
+                  ? 'بمعرفتنا ببنية الروابط ومحتواها الفعلي، نفهم عمق الموقع وهيكله بشكل أدق، وهذا يساعدنا في تحديد ما يحتاجه الموقع بدقة عالية: ما هي الصفحات الجديدة الواجب إنشاؤها لسد فجوات الظهور، وما هي الصفحات الحالية التي تحتاج للتحسين وتوسيع المحتوى لتتصدر النتائج، مما يرتقي بالسيستم ومخرجاته الاستراتيجية.'
+                  : 'By knowing the exact URL structure and content depth, we understand the site far better. This enables precise diagnosis of what the site needs: which new pages to create for search gaps, and which existing pages need content enrichment to reach #1.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Health Summary Banner */}
+          <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-start gap-3">
+            <FileCode className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-bold text-emerald-950 mb-1">
+                {isAr ? 'تقرير الفحص الهجين بين خريطة الموقع وبيانات Search Console' : 'Hybrid Sitemap & GSC Audit'}
+              </h4>
+              <p className="text-xs text-emerald-800 leading-relaxed">
+                {analysis.hybridSitemapAudit.siteHealthSummary}
+              </p>
+            </div>
+          </div>
+
+          {/* Key Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                {isAr ? 'إجمالي روابط الخريطة' : 'Total Sitemap URLs'}
+              </span>
+              <span className="text-xl font-black text-slate-900">
+                {analysis.hybridSitemapAudit.totalSitemapUrls.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                {isAr ? 'الصفحات النشطة في GSC' : 'Active GSC Pages'}
+              </span>
+              <span className="text-xl font-black text-indigo-700">
+                {analysis.hybridSitemapAudit.totalGscActivePages.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                {isAr ? 'روابط نشطة ومفهرسة' : 'Indexed & Ranking'}
+              </span>
+              <span className="text-xl font-black text-emerald-700">
+                {analysis.hybridSitemapAudit.indexedAndRankingUrls.toLocaleString()}
+              </span>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
+              <span className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                {isAr ? 'صفحات مهجورة في الخريطة' : 'Orphan Sitemap URLs'}
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-xl font-black text-rose-600">
+                  {analysis.hybridSitemapAudit.orphanSitemapUrls.length.toLocaleString()}
+                </span>
+                <span className="text-xs text-rose-600 font-bold">
+                  (
+                  {(
+                    (analysis.hybridSitemapAudit.orphanSitemapUrls.length /
+                      Math.max(1, analysis.hybridSitemapAudit.totalSitemapUrls)) *
+                    100
+                  ).toFixed(1)}
+                  %)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Strategic Group 1: New Pages Needed */}
+          {analysis.hybridSitemapAudit.newPagesNeeded && analysis.hybridSitemapAudit.newPagesNeeded.length > 0 && (
+            <div className="bg-white rounded-2xl border border-indigo-200 p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-indigo-100">
+                <div>
+                  <h3 className="text-sm font-black text-indigo-950 flex items-center gap-2">
+                    <PlusCircle className="w-4 h-4 text-indigo-600" />
+                    <span>{isAr ? 'المجموعة الأولى: صفحات جديدة مطلوبة لسد فجوات الفهرسة' : 'Strategic Group 1: New Pages Needed to Cover Gaps'}</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {isAr
+                      ? 'موضوعات وكيانات بحثية تحقق ظهوراً ملحوظاً في جوجل ولكن لا توجد أي صفحة مخصصة لها داخل خريطة الموقع.'
+                      : 'High-intent search entities ranking in GSC without a dedicated URL in your sitemap.'}
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {analysis.hybridSitemapAudit.newPagesNeeded.length} {isAr ? 'صفحات مطلوبة' : 'pages needed'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {analysis.hybridSitemapAudit.newPagesNeeded.map((item, idx) => (
+                  <div key={idx} className="p-3.5 rounded-xl border border-indigo-100 bg-indigo-50/30 hover:bg-indigo-50/60 transition-colors space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-xs text-indigo-950">{item.query}</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-indigo-600 text-white shrink-0">
+                        {item.impressions.toLocaleString()} {isAr ? 'ظهور' : 'imp'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="font-semibold text-slate-600">{isAr ? 'التنسيق المقترح:' : 'Format:'}</span>
+                      <span className="px-2 py-0.5 rounded bg-white border border-indigo-200 font-bold text-indigo-800 text-[10px]">
+                        {item.suggestedFormat}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed bg-white p-2 rounded-lg border border-slate-100">
+                      {item.rationale}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Strategic Group 2: Pages Needing Improvement */}
+          {analysis.hybridSitemapAudit.pagesNeedingImprovement && analysis.hybridSitemapAudit.pagesNeedingImprovement.length > 0 && (
+            <div className="bg-white rounded-2xl border border-amber-200 p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-amber-100">
+                <div>
+                  <h3 className="text-sm font-black text-amber-950 flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-amber-600" />
+                    <span>{isAr ? 'المجموعة الثانية: صفحات حالية في السايت ماب تحتاج للتحسين وتوسيع المحتوى' : 'Strategic Group 2: Existing Sitemap Pages Needing Improvement'}</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {isAr
+                      ? 'صفحات موجودة في خريطة الموقع ولكنها إما في ترتيب قريب (Striking Distance 8-20) أو تعاني من ضعف نسبة النقر (Low CTR).'
+                      : 'Existing URLs in your sitemap with high search impressions that need content upgrades to unlock top rankings.'}
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  {analysis.hybridSitemapAudit.pagesNeedingImprovement.length} {isAr ? 'صفحات بحاجة لتطوير' : 'pages to improve'}
+                </span>
+              </div>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {analysis.hybridSitemapAudit.pagesNeedingImprovement.map((item, idx) => (
+                  <div key={idx} className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/20 hover:bg-amber-50/40 transition-colors space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="font-mono text-xs text-slate-900 truncate max-w-md font-semibold">
+                        {item.page}
+                      </span>
+                      <div className="flex items-center gap-2 text-[10px] shrink-0">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-bold">
+                          {item.impressions.toLocaleString()} {isAr ? 'ظهور' : 'imp'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold">
+                          {item.clicks.toLocaleString()} {isAr ? 'نقرة' : 'clicks'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold">
+                          {isAr ? 'الترتيب' : 'Pos'}: {item.position.toFixed(1)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                      <div className="bg-white p-2 rounded-lg border border-slate-100 text-slate-700">
+                        <strong className="text-amber-900 block mb-0.5">{isAr ? 'المشكلة المرصودة:' : 'Issue:'}</strong>
+                        {item.issue}
+                      </div>
+                      <div className="bg-white p-2 rounded-lg border border-emerald-100 text-slate-700">
+                        <strong className="text-emerald-900 block mb-0.5">{isAr ? 'الإجراء الموصى به:' : 'Action:'}</strong>
+                        {item.recommendedAction}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Orphan URLs Table (URLs in Sitemap with 0 impressions) */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900">
+                  {isAr ? 'المجموعة الثالثة: الصفحات المهجورة في خريطة الموقع (Orphan Sitemap URLs)' : 'Group 3: Orphan Sitemap URLs (0 Impressions)'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {isAr
+                    ? 'روابط موجودة في خريطة الموقع ولكنها لا تحقق أي ظهور (0 Impressions) في Search Console خلال آخر 3 أشهر.'
+                    : 'URLs in sitemap with 0 impressions in GSC over the last 3 months.'}
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                {analysis.hybridSitemapAudit.orphanSitemapUrls.length} {isAr ? 'صفحة مرصودة' : 'pages'}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto max-h-80">
+              <table className="w-full text-xs text-left rtl:text-right">
+                <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 sticky top-0">
+                  <tr>
+                    <th className="py-2.5 px-4">{isAr ? 'الرابط في خريطة الموقع' : 'Sitemap URL'}</th>
+                    <th className="py-2.5 px-3">{isAr ? 'التصنيف' : 'Category'}</th>
+                    <th className="py-2.5 px-3 text-center">{isAr ? 'عمق المسار' : 'Depth'}</th>
+                    <th className="py-2.5 px-4">{isAr ? 'الإجراء الموصى به' : 'Recommended Action'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {analysis.hybridSitemapAudit.orphanSitemapUrls.length > 0 ? (
+                    analysis.hybridSitemapAudit.orphanSitemapUrls.map((url, i) => (
+                      <tr key={i} className="hover:bg-slate-50/80">
+                        <td className="py-2.5 px-4 font-mono text-[11px] text-slate-800 max-w-sm truncate">
+                          {url.loc}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-medium">
+                            {url.category}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-bold text-slate-700">
+                          {url.depth}
+                        </td>
+                        <td className="py-2.5 px-4 text-amber-800 font-medium text-[11px]">
+                          {isAr
+                            ? 'إضافة روابط داخلية مباشرة من الصفحات الرئيسية وتحديث المحتوى'
+                            : 'Boost internal inlinks and enhance original content'}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-emerald-700 font-bold">
+                        {isAr ? 'ممتاز! لا توجد صفحات مهجورة، كافة روابط الخريطة تحقق ظهوراً دورياً.' : 'Great! All sitemap URLs have active search impressions.'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Unindexed Gap Queries */}
+          {analysis.hybridSitemapAudit.unindexedGapQueries.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900">
+                  {isAr ? 'استعلامات فجوة الفهرسة (Unindexed Gap Queries)' : 'Unindexed Gap Queries'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {isAr
+                    ? 'طلبات بحث تحقق ظهوراً مرتفعاً في جوجل ولكن لا توجد صفحة مخصصة لها في خريطة الموقع.'
+                    : 'High impression queries without a matching URL in the sitemap.'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {analysis.hybridSitemapAudit.unindexedGapQueries.map((q, i) => (
+                  <span
+                    key={i}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-semibold flex items-center gap-1.5"
+                  >
+                    <span>{q}</span>
+                    <span className="text-[10px] text-indigo-600 bg-white px-1.5 py-0.2 rounded font-bold">
+                      {isAr ? 'فجوة محتوى' : 'Gap'}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Category Breakdown Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200">
+              <h3 className="text-xs font-bold text-slate-900">
+                {isAr ? 'المجموعة الرابعة: تغطية أقسام الموقع ونشاطها (Category Performance Matrix)' : 'Group 4: Category Performance Matrix'}
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left rtl:text-right">
+                <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-4">{isAr ? 'القسم / المسار' : 'Category'}</th>
+                    <th className="py-2.5 px-3 text-center">{isAr ? 'عدد الروابط في الخريطة' : 'Sitemap URLs'}</th>
+                    <th className="py-2.5 px-3 text-center">{isAr ? 'مرات الظهور (GSC)' : 'Impressions'}</th>
+                    <th className="py-2.5 px-3 text-center">{isAr ? 'النقرات (Clicks)' : 'Clicks'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {analysis.hybridSitemapAudit.categoryBreakdown.map((cat, i) => (
+                    <tr key={i} className="hover:bg-slate-50/80">
+                      <td className="py-2.5 px-4 font-bold text-slate-900">{cat.category}</td>
+                      <td className="py-2.5 px-3 text-center font-bold text-slate-700">{cat.sitemapCount}</td>
+                      <td className="py-2.5 px-3 text-center text-slate-800">{cat.gscImpressions.toLocaleString()}</td>
+                      <td className="py-2.5 px-3 text-center text-indigo-700 font-bold">{cat.gscClicks.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
       {activeClusterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200" dir={isAr ? 'rtl' : 'ltr'}>

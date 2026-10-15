@@ -181,15 +181,57 @@ export function generateHybridSitemapAudit(
     }
   }
 
-  // Detect unindexed gap queries (queries with high impressions that don't match any sitemap page)
+  // Detect unindexed gap queries and generate concrete New Pages Needed
   const unindexedGapQueries: string[] = [];
+  const newPagesNeeded: HybridSitemapAudit['newPagesNeeded'] = [];
   const sitemapUrlSlugs = sitemap.urls.map(u => cleanText(u.loc));
 
   for (const q of rawQueries.slice(0, 100)) {
     const cleanQ = cleanText(q.query);
     const hasSitemapMatch = sitemapUrlSlugs.some(slug => slug.includes(cleanQ) || cleanQ.split(' ').some(w => w.length > 3 && slug.includes(w)));
-    if (!hasSitemapMatch && q.impressions >= 20) {
+    if (!hasSitemapMatch && q.impressions >= 15) {
       unindexedGapQueries.push(q.query);
+
+      let format = 'دليل تفصيلي متخصص';
+      if (cleanQ.includes('سعر') || cleanQ.includes('تكلفة') || cleanQ.includes('بكم') || cleanQ.includes('cost') || cleanQ.includes('price')) {
+        format = 'صفحة أسعار وشفافية التكلفة';
+      } else if (cleanQ.includes('صيانة') || cleanQ.includes('تصليح') || cleanQ.includes('خدمة') || cleanQ.includes('repair') || cleanQ.includes('service')) {
+        format = 'صفحة خدمة متخصصة مستقلة';
+      } else if (cleanQ.includes('افضل') || cleanQ.includes('أفضل') || cleanQ.includes('مقارنة') || cleanQ.includes('vs') || cleanQ.includes('best')) {
+        format = 'صفحة مقارنة وجداول مواصفات';
+      }
+
+      if (newPagesNeeded.length < 10) {
+        newPagesNeeded.push({
+          entity: q.query,
+          query: q.query,
+          impressions: q.impressions,
+          suggestedFormat: format,
+          rationale: `استعلام يحقق ${q.impressions.toLocaleString()} ظهور دون وجود صفحة مخصصة في خريطة الموقع، مما يمثل فجوة دلالية مباشرة.`
+        });
+      }
+    }
+  }
+
+  // Detect Pages Needing Content Improvement
+  const pagesNeedingImprovement: HybridSitemapAudit['pagesNeedingImprovement'] = [];
+  for (const p of rawPages.slice(0, 50)) {
+    if (p.impressions >= 50 && (p.ctr < 0.03 || (p.position >= 8 && p.position <= 20))) {
+      let issue = 'ترتيب قريب (Striking Distance) بحاجة لدفعة للمراكز الأولى';
+      let action = 'إضافة قسم H2/H3 مع إجابة مباشرة وجدول أسعار وضمان';
+      if (p.position <= 4 && p.ctr < 0.04) {
+        issue = 'ظهور في المراكز الأولى مع ضعف ملحوظ في نسبة النقر (CTR)';
+        action = 'إعادة كتابة عنوان الصفحة والوصف التسويقي لجذب النقرات بميزة تنافسية واضحة';
+      }
+
+      pagesNeedingImprovement.push({
+        page: p.page,
+        impressions: p.impressions,
+        clicks: p.clicks,
+        position: p.position,
+        issue,
+        recommendedAction: action
+      });
     }
   }
 
@@ -217,6 +259,8 @@ export function generateHybridSitemapAudit(
     indexedAndRankingUrls: indexedAndRanking,
     orphanSitemapUrls: orphanSitemapUrls.slice(0, 50), // top 50 orphans for review
     unindexedGapQueries: unindexedGapQueries.slice(0, 20),
+    newPagesNeeded,
+    pagesNeedingImprovement: pagesNeedingImprovement.slice(0, 15),
     categoryBreakdown,
     siteHealthSummary
   };

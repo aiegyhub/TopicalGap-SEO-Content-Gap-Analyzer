@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Layers, Settings, Globe, FolderGit2, CheckCircle, LogOut } from 'lucide-react';
+import { Layers, Settings, Globe, Folder, CheckCircle, LogOut } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -11,6 +11,9 @@ interface HeaderProps {
   lang: 'ar' | 'en';
   onToggleLang: () => void;
   onOpenSettings: () => void;
+  onOpenProjects?: () => void;
+  savedProjectsCount?: number;
+  activeProjectName?: string;
   hasDriveAccess: boolean;
   isLoggingIn?: boolean;
 }
@@ -22,6 +25,9 @@ export default function Header({
   lang,
   onToggleLang,
   onOpenSettings,
+  onOpenProjects,
+  savedProjectsCount = 0,
+  activeProjectName,
   hasDriveAccess,
   isLoggingIn = false
 }: HeaderProps) {
@@ -45,17 +51,35 @@ export default function Header({
               </span>
             </div>
             <p className="text-xs text-slate-500 hidden sm:block">
-              {isAr ? 'تحليل فجوات المحتوى والمعمارية الدلالية' : 'Topical Content Gap Analysis'}
+              {isAr ? 'تحليل فجوات المحتوى ومعمارية السايت ماب الدلالية' : 'Topical Content Gap & Sitemap Architecture'}
             </p>
           </div>
         </div>
 
         {/* Right side actions */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Projects Manager Button */}
+          {onOpenProjects && (
+            <button
+              type="button"
+              onClick={onOpenProjects}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all shadow-2xs cursor-pointer"
+              title={isAr ? 'إدارة المشاريع السابقة والتنقل بينها' : 'Saved Projects Manager'}
+            >
+              <Folder className="h-4 w-4 text-indigo-600" />
+              <span>{isAr ? 'المشاريع' : 'Projects'}</span>
+              {savedProjectsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold">
+                  {savedProjectsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Language Toggle */}
           <button
             onClick={onToggleLang}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
             title="Switch Language"
           >
             <Globe className="h-3.5 w-3.5 text-slate-500" />
@@ -65,7 +89,7 @@ export default function Header({
           {/* Settings Button */}
           <button
             onClick={onOpenSettings}
-            className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+            className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
             title={isAr ? 'إعدادات الذكاء الاصطناعي والمفاتيح' : 'AI Settings & API Keys'}
             aria-label="Settings"
           >
@@ -98,7 +122,7 @@ export default function Header({
               </div>
               <button
                 onClick={onSignOut}
-                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1 cursor-pointer"
                 title={isAr ? 'تسجيل الخروج' : 'Sign Out'}
                 aria-label="Sign Out"
               >
@@ -109,7 +133,7 @@ export default function Header({
             <button
               onClick={onSignIn}
               disabled={isLoggingIn}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold shadow-xs transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold shadow-xs transition-colors shrink-0 cursor-pointer ${
                 isLoggingIn ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-50'
               }`}
             >
